@@ -92,7 +92,7 @@ module Wukong
     Settings.define :hadoop,           :description => "run in hadoop mode (invokes the system hadoop runner script)", :wukong => true
     Settings.define :dry_run,          :description => "echo the command that will be run, but don't run it", :wukong => true
 	Settings.define :jar_mode,         :description => "distribute script calling Wukong::Script within the jar and use it instead of the local copy.", :wukong => true
-	Settings.define :jar_files,        :default => '', :description => "additional files or directory that should be packaged into the distributed jar.", :wukong => true
+	Settings.define :jar_files,        :default => '', :description => "a comma separated list of additional files or directories that should be packaged into the distributed jar.", :wukong => true
 
     #
     # Instantiate the Script with the Mapper and the Reducer class (each a

@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Philip (flip) Kromer"]
-  s.date = %q{2010-06-06}
+  s.date = %q{2010-06-26}
   s.description = %q{  Treat your dataset like a:
 
       * stream of lines when it's efficient to process by lines
@@ -29,6 +29,7 @@ Gem::Specification.new do |s|
      "INSTALL.textile",
      "LICENSE.textile",
      "README.textile",
+     "TODO.textile",
      "bin/cutc",
      "bin/cuttab",
      "bin/greptrue",
@@ -38,6 +39,7 @@ Gem::Specification.new do |s|
      "bin/hdp-du",
      "bin/hdp-get",
      "bin/hdp-kill",
+     "bin/hdp-kill-task",
      "bin/hdp-ls",
      "bin/hdp-mkdir",
      "bin/hdp-mv",
@@ -62,6 +64,7 @@ Gem::Specification.new do |s|
      "bin/wu-sum",
      "docpages/INSTALL.textile",
      "docpages/LICENSE.textile",
+     "docpages/README-performance.textile",
      "docpages/README-wulign.textile",
      "docpages/UsingWukong-part1-get_ready.textile",
      "docpages/UsingWukong-part2-ThinkingBigData.textile",
@@ -124,8 +127,10 @@ Gem::Specification.new do |s|
      "examples/contrib/jeans/data/sizes",
      "examples/contrib/jeans/normalize.rb",
      "examples/contrib/jeans/sizes.rb",
+     "examples/corpus/words_to_bigrams.rb",
      "examples/count_keys.rb",
      "examples/count_keys_at_mapper.rb",
+     "examples/keystore/cassandra_batch_test.rb",
      "examples/keystore/conditional_outputter_example.rb",
      "examples/network_graph/adjacency_list.rb",
      "examples/network_graph/breadth_first_search.rb",
@@ -170,8 +175,11 @@ Gem::Specification.new do |s|
      "lib/wukong/extensions/struct.rb",
      "lib/wukong/extensions/symbol.rb",
      "lib/wukong/keystore/cassandra_conditional_outputter.rb",
+     "lib/wukong/keystore/tyrant_db.rb",
+     "lib/wukong/keystore/tyrant_notes.textile",
      "lib/wukong/logger.rb",
      "lib/wukong/models/graph.rb",
+     "lib/wukong/periodic_monitor.rb",
      "lib/wukong/rdf.rb",
      "lib/wukong/schema.rb",
      "lib/wukong/script.rb",
@@ -180,6 +188,7 @@ Gem::Specification.new do |s|
      "lib/wukong/streamer.rb",
      "lib/wukong/streamer/accumulating_reducer.rb",
      "lib/wukong/streamer/base.rb",
+     "lib/wukong/streamer/cassandra_streamer.rb",
      "lib/wukong/streamer/count_keys.rb",
      "lib/wukong/streamer/count_lines.rb",
      "lib/wukong/streamer/counting_reducer.rb",
@@ -208,7 +217,7 @@ Gem::Specification.new do |s|
   s.homepage = %q{http://mrflip.github.com/wukong}
   s.rdoc_options = ["--charset=UTF-8"]
   s.require_paths = ["lib"]
-  s.rubygems_version = %q{1.3.6}
+  s.rubygems_version = %q{1.3.7}
   s.summary = %q{Hadoop Streaming for Ruby. Wukong makes Hadoop so easy a chimpanzee can use it, yet handles terabyte-scale computation with ease.}
   s.test_files = [
     "spec/spec_helper.rb",
@@ -216,8 +225,10 @@ Gem::Specification.new do |s|
      "spec/wukong/script_spec.rb",
      "examples/contrib/jeans/normalize.rb",
      "examples/contrib/jeans/sizes.rb",
+     "examples/corpus/words_to_bigrams.rb",
      "examples/count_keys.rb",
      "examples/count_keys_at_mapper.rb",
+     "examples/keystore/cassandra_batch_test.rb",
      "examples/keystore/conditional_outputter_example.rb",
      "examples/network_graph/adjacency_list.rb",
      "examples/network_graph/breadth_first_search.rb",
@@ -241,18 +252,20 @@ Gem::Specification.new do |s|
     current_version = Gem::Specification::CURRENT_SPECIFICATION_VERSION
     s.specification_version = 3
 
-    if Gem::Version.new(Gem::RubyGemsVersion) >= Gem::Version.new('1.2.0') then
+    if Gem::Version.new(Gem::VERSION) >= Gem::Version.new('1.2.0') then
       s.add_development_dependency(%q<rspec>, [">= 1.2.9"])
       s.add_development_dependency(%q<yard>, [">= 0"])
       s.add_runtime_dependency(%q<addressable>, [">= 0"])
       s.add_runtime_dependency(%q<extlib>, [">= 0"])
       s.add_runtime_dependency(%q<htmlentities>, [">= 0"])
+      s.add_runtime_dependency(%q<configliere>, [">= 0"])
     else
       s.add_dependency(%q<rspec>, [">= 1.2.9"])
       s.add_dependency(%q<yard>, [">= 0"])
       s.add_dependency(%q<addressable>, [">= 0"])
       s.add_dependency(%q<extlib>, [">= 0"])
       s.add_dependency(%q<htmlentities>, [">= 0"])
+      s.add_dependency(%q<configliere>, [">= 0"])
     end
   else
     s.add_dependency(%q<rspec>, [">= 1.2.9"])
@@ -260,6 +273,7 @@ Gem::Specification.new do |s|
     s.add_dependency(%q<addressable>, [">= 0"])
     s.add_dependency(%q<extlib>, [">= 0"])
     s.add_dependency(%q<htmlentities>, [">= 0"])
+    s.add_dependency(%q<configliere>, [">= 0"])
   end
 end
 

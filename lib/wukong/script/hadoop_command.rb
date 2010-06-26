@@ -79,15 +79,12 @@ module Wukong
     end
 
 	def hadoop_file_args
-	  jar_files = options[:jar_files]
+	  jar_files = ""
+	  jar_files << options[:jar_files].split(',').map{|f| "-file '#{f}'"}.join(' ') if options[:jar_files].is_a? String
 	  if options[:jar_mode]
-	  	jar_files << " #{File.basename(this_script_filename)}"
+	  	jar_files << " -file '#{this_script_filename}'"
 	  end
-	  if jar_files.length>0
-	    return "--file '#{jar_files}'"
-	  else
-	    return ''
-	  end
+	  return jar_files
 	end
 
     def hadoop_recycle_env
