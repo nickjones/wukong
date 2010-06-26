@@ -79,7 +79,7 @@ module Wukong
     #   thus, requiring a working hadoop install), or to run in local mode
     #   (script --map | sort | script --reduce)
     #
-    Settings.define :default_run_mode, :default => 'hadoop',    :description => 'Run as local or as hadoop?', :wukong => true, :hide_help => false
+    Settings.define :default_run_mode, :default => 'hadoop',    :description => 'Run as local or hadoop?', :wukong => true, :hide_help => false
     Settings.define :default_mapper,   :default => '/bin/cat',  :description => 'The command to run when a nil mapper is given.', :wukong => true, :hide_help => true
     Settings.define :default_reducer,  :default => '/bin/cat',  :description => 'The command to run when a nil reducer is given.', :wukong => true, :hide_help => true
     Settings.define :map_command,      :description => "shell command to run as mapper, in place of this wukong script", :wukong => true
@@ -91,6 +91,8 @@ module Wukong
     Settings.define :local,            :description => "run in local mode (invokes 'your_script.rb --map | sort | your_script.rb --reduce'", :wukong => true
     Settings.define :hadoop,           :description => "run in hadoop mode (invokes the system hadoop runner script)", :wukong => true
     Settings.define :dry_run,          :description => "echo the command that will be run, but don't run it", :wukong => true
+	Settings.define :jar_mode,         :description => "distribute script calling Wukong::Script within the jar and use it instead of the local copy.", :wukong => true
+	Settings.define :jar_files,        :default => '', :description => "additional files or directory that should be packaged into the distributed jar.", :wukong => true
 
     #
     # Instantiate the Script with the Mapper and the Reducer class (each a
@@ -147,7 +149,9 @@ module Wukong
     # In local mode, it's given to the system() call
     #
     def map_command
-      if mapper_klass
+      if mapper_klass and options[:jar_mode]
+         "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --map " + non_wukong_params
+	  elsif mapper_klass
          "#{ruby_interpreter_path} #{this_script_filename} --map " + non_wukong_params
       else
         options[:map_command] || options[:default_mapper]
@@ -160,7 +164,9 @@ module Wukong
     # In local mode, it's given to the system() call
     #
     def reduce_command
-      if reducer_klass
+      if reducer_klass and options[:jar_mode]
+         "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --reduce " + non_wukong_params
+	  elsif reducer_klass
          "#{ruby_interpreter_path} #{this_script_filename} --reduce " + non_wukong_params
       else
         options[:reduce_command]

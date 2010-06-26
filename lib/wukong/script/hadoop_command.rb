@@ -78,6 +78,18 @@ module Wukong
       extra_str_args + extra_hsh_args
     end
 
+	def hadoop_file_args
+	  jar_files = options[:jar_files]
+	  if options[:jar_mode]
+	  	jar_files << " #{File.basename(this_script_filename)}"
+	  end
+	  if jar_files.length>0
+	    return "--file '#{jar_files}'"
+	  else
+	    return ''
+	  end
+	end
+
     def hadoop_recycle_env
       %w[RUBYLIB].map do |var|
         %Q{-cmdenv '#{var}=#{ENV[var]}'} if ENV[var]
@@ -106,6 +118,7 @@ module Wukong
         "-reducer '#{reduce_command}'",
         "-input   '#{input_path}'",
         "-output  '#{output_path}'",
+		hadoop_file_args,
         hadoop_recycle_env,
         hadoop_other_args(input_path, output_path),
       ].flatten.compact.join(" \t\\\n  ")
