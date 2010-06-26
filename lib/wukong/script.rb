@@ -79,7 +79,7 @@ module Wukong
     #   thus, requiring a working hadoop install), or to run in local mode
     #   (script --map | sort | script --reduce)
     #
-    Settings.define :default_run_mode, :default => 'hadoop',    :description => 'Run as local or hadoop?', :wukong => true, :hide_help => false
+    Settings.define :default_run_mode, :default => 'hadoop',    :description => 'Run as local or as hadoop?', :wukong => true, :hide_help => false
     Settings.define :default_mapper,   :default => '/bin/cat',  :description => 'The command to run when a nil mapper is given.', :wukong => true, :hide_help => true
     Settings.define :default_reducer,  :default => '/bin/cat',  :description => 'The command to run when a nil reducer is given.', :wukong => true, :hide_help => true
     Settings.define :map_command,      :description => "shell command to run as mapper, in place of this wukong script", :wukong => true
