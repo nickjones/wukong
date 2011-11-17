@@ -122,8 +122,8 @@ module Wukong
 
     def hadoop_file_args
       if options[:jar_files]
-        jar_files = "-file '#{this_script_filename}'    \\\n"
-        jar_files << options[:jar_files].split(',').map{|f| "  -file '#{f}'     \\"}.join("\n")
+        jar_files = "-file '#{this_script_filename}' "
+        jar_files << options[:jar_files].split(',').map{|f| "-file '#{f}'"}.join(' ')
         return jar_files
       else
         return "-file '#{this_script_filename}'"
