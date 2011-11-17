@@ -1,10 +1,12 @@
 require 'pathname'
+require 'wukong/extensions'
+require 'configliere' ; Settings.use(:commandline, :env_var, :define)
+require 'wukong'
 require 'wukong/script/hadoop_command'
 require 'wukong/script/local_command'
-require 'configliere' ; Configliere.use(:commandline, :env_var, :define)
 require 'rbconfig' # for uncovering ruby_interpreter_path
+require 'wukong/streamer' ; include Wukong::Streamer
 module Wukong
-
   # == How to run a Wukong script
   #
   #   your/script.rb --run path/to/input_files path/to/output_dir
@@ -28,6 +30,13 @@ module Wukong
   #
   # To use more than one file as input, you can use normal * ? [] wildcards or
   # give a comma-separated list -- see the hadoop documentation for syntax.
+  #
+  # == Run in Elastic MapReduce Mode (--run=emr)
+  #
+  # Wukong can be used to start scripts on the amazon cloud
+  #
+  # * copies the script to s3 in two parts
+  # * invokes it using the amazon API
   #
   # == Run locally (--run=local)
   #
@@ -57,7 +66,8 @@ module Wukong
   class Script
     include Wukong::HadoopCommand
     include Wukong::LocalCommand
-    attr_accessor :mapper_klass, :reducer_klass, :options
+    attr_reader :mapper, :reducer, :options
+    attr_reader :input_paths, :output_path
 
     # ---------------------------------------------------------------------------
     #
@@ -79,20 +89,14 @@ module Wukong
     #   thus, requiring a working hadoop install), or to run in local mode
     #   (script --map | sort | script --reduce)
     #
-    Settings.define :default_run_mode, :default => 'hadoop',    :description => 'Run as local or as hadoop?', :wukong => true, :hide_help => false
-    Settings.define :default_mapper,   :default => '/bin/cat',  :description => 'The command to run when a nil mapper is given.', :wukong => true, :hide_help => true
-    Settings.define :default_reducer,  :default => '/bin/cat',  :description => 'The command to run when a nil reducer is given.', :wukong => true, :hide_help => true
-    Settings.define :map_command,      :description => "shell command to run as mapper, in place of this wukong script", :wukong => true
-    Settings.define :hadoop_home,      :default => '/usr/lib/hadoop', :env_var => 'HADOOP_HOME', :description => "Path to hadoop installation; :hadoop_home/bin/hadoop should run hadoop.", :wukong => true
-    Settings.define :hadoop_runner,    :description => "Path to hadoop script; usually, set :hadoop_home instead of this.", :wukong => true
-    Settings.define :map,              :description => "run the script's map phase. Reads/writes to STDIN/STDOUT.", :wukong => true
-    Settings.define :reduce,           :description => "run the script's reduce phase. Reads/writes to STDIN/STDOUT. You can only choose one of --run, --map or --reduce.", :wukong => true
-    Settings.define :run,              :description => "run the script's main phase. In hadoop mode, invokes the hadoop script; in local mode, runs your_script.rb --map | sort | your_script.rb --reduce", :wukong => true
-    Settings.define :local,            :description => "run in local mode (invokes 'your_script.rb --map | sort | your_script.rb --reduce'", :wukong => true
-    Settings.define :hadoop,           :description => "run in hadoop mode (invokes the system hadoop runner script)", :wukong => true
-    Settings.define :dry_run,          :description => "echo the command that will be run, but don't run it", :wukong => true
-	Settings.define :jar_mode,         :description => "distribute script calling Wukong::Script within the jar and use it instead of the local copy.", :wukong => true
-	Settings.define :jar_files,        :default => '', :description => "a comma separated list of additional files or directories that should be packaged into the distributed jar.", :wukong => true
+    Settings.define :default_run_mode,   :default => 'hadoop', :description => 'Run mode: local, hadoop, emr (elastic mapreduce)', :wukong => true, :hide_help => false
+    Settings.define :map_command,                              :description => "shell command to run as mapper, in place of this wukong script", :wukong => true
+    Settings.define :reduce_command,                           :description => "shell command to run as reducer, in place of this wukong script", :wukong => true
+    Settings.define :run,      :env_var => 'WUKONG_RUN_MODE',    :description => "run the script's workflow: Specify 'hadoop' to use hadoop streaming; 'local' to run your_script.rb --map | sort | your_script.rb --reduce; 'emr' to launch on the amazon cloud; 'map' or 'reduce' to run that phase.", :wukong => true
+    Settings.define :map,                                      :description => "run the script's map phase. Reads/writes to STDIN/STDOUT.", :wukong => true
+    Settings.define :reduce,                                   :description => "run the script's reduce phase. Reads/writes to STDIN/STDOUT. You can only choose one of --run, --map or --reduce.", :wukong => true
+    Settings.define :dry_run,                                  :description => "echo the command that will be run, but don't run it", :wukong => true
+    Settings.define :rm,                                       :description => "Recursively remove the destination directory. Only used in hadoop mode.", :wukong => true
 
     #
     # Instantiate the Script with the Mapper and the Reducer class (each a
@@ -121,26 +125,48 @@ module Wukong
     #   end
     #   MyScript.new(MyMapper, nil).run
     #
-    def initialize mapper_klass, reducer_klass=nil, extra_options={}
-      self.options = Settings.dup
-      self.options.resolve!
-      self.options.merge! self.default_options
-      self.options.merge! extra_options
-      self.mapper_klass  = mapper_klass
-      self.reducer_klass = reducer_klass
-      # If no reducer_klass and no reduce_command, then skip the reduce phase
-      options[:reduce_tasks] = 0 if (! reducer_klass) && (! options[:reduce_command]) && (! options[:reduce_tasks])
+    def initialize mapper, reducer=nil, extra_options={}
+      Settings.resolve!
+      @options = Settings
+      options.merge! extra_options
+      @mapper  = (case mapper  when Class then mapper.new  when nil then nil else mapper  ; end)
+      @reducer = (case reducer when Class then reducer.new when nil then nil else reducer ; end)
+      @output_path = options.rest.pop
+      @input_paths = options.rest.reject(&:blank?)
+      if (input_paths.blank? || output_path.blank?) && (not options[:dry_run]) && (not ['map', 'reduce'].include?(run_mode))
+        raise "You need to specify a parsed input directory and a directory for output. Got #{ARGV.inspect}"
+      end
     end
 
     #
-    # Gives default options.  Command line parameters take precedence
+    # In --run mode, use the framework (local, hadoop, emr, etc) to re-launch
+    #   the script as mapper, reducer, etc.
+    # If --map or --reduce, dispatch to the mapper or reducer.
     #
-    # MAKE SURE YOU CALL SUPER: write your script according to the pattern
-    #
-    #   super.merge :my_option => :val
-    #
-    def default_options
-      {}
+    def run
+      case run_mode
+      when 'map'              then mapper.stream
+      when 'reduce'           then reducer.stream
+      when 'local'            then execute_local_workflow
+      when 'cassandra'        then execute_hadoop_workflow
+      when 'hadoop', 'mapred' then execute_hadoop_workflow
+      when 'emr'
+        require 'wukong/script/emr_command'
+        execute_emr_workflow
+      else                    dump_help
+      end
+    end
+
+    # if only --run is given, assume default run mode
+    def run_mode
+      case
+      when options[:map]           then 'map'
+      when options[:reduce]        then 'reduce'
+      when ($0 =~ /-mapper\.rb$/)  then 'map'
+      when ($0 =~ /-reducer\.rb$/) then 'reduce'
+      when (options[:run] == true) then options[:default_run_mode]
+      else                         options[:run].to_s
+      end
     end
 
     #
@@ -148,13 +174,16 @@ module Wukong
     # In hadoop mode, this is given to the hadoop streaming command.
     # In local mode, it's given to the system() call
     #
-    def map_command
-      if mapper_klass and options[:jar_mode]
-         "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --map " + non_wukong_params
-	  elsif mapper_klass
-         "#{ruby_interpreter_path} #{this_script_filename} --map " + non_wukong_params
+    def mapper_commandline(run_option=:local)
+      if mapper
+        case run_option
+        when :local then
+          "#{ruby_interpreter_path} #{this_script_filename} --map " + non_wukong_params
+        when :hadoop then
+          "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --map " + non_wukong_params
+        end
       else
-        options[:map_command] || options[:default_mapper]
+        options[:map_command]
       end
     end
 
@@ -163,52 +192,59 @@ module Wukong
     # In hadoop mode, this is given to the hadoop streaming command.
     # In local mode, it's given to the system() call
     #
-    def reduce_command
-      if reducer_klass and options[:jar_mode]
-         "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --reduce " + non_wukong_params
-	  elsif reducer_klass
-         "#{ruby_interpreter_path} #{this_script_filename} --reduce " + non_wukong_params
+    def reducer_commandline(run_option=:local)
+      if reducer
+        case run_option
+        when :local then
+          "#{ruby_interpreter_path} #{this_script_filename} --reduce " + non_wukong_params
+        when :hadoop then
+          "#{ruby_interpreter_path} #{File.basename(this_script_filename)} --reduce " + non_wukong_params
+        end
       else
         options[:reduce_command]
       end
     end
 
+    def job_name
+      options[:job_name] ||
+        "#{File.basename(this_script_filename)}---#{input_paths}---#{output_path}".gsub(%r{[^\w/\.\-\+]+}, '')
+    end
+
+    # Wrapper for dangerous operations to catch errors
+    def safely action, &block
+      begin
+        block.call
+      rescue StandardError => e ; handle_error(action, e); end
+    end
+
+  protected
+
     #
-    # Shell command to re-run in mapreduce mode using --map and --reduce
+    # Execute the runner phase:
+    # use the running framework to relaunch the script in map and in reduce mode
     #
-    def runner_command input_path, output_path
-      # run as either local or hadoop
-      case run_mode
-      when 'local'
-        $stderr.puts "  Reading STDIN / Writing STDOUT"
-        command = local_command input_path, output_path
-      when 'hadoop', 'mapred'
-        $stderr.puts "  Launching hadoop as"
-        command = hadoop_command input_path, output_path
+    def execute_command! *args
+      command = args.flatten.reject(&:blank?).join(" \\\n    ")
+      Log.info "Running\n\n#{command}\n"
+      if options[:dry_run]
+        Log.info '== [Not running preceding command: dry run] =='
       else
-        raise "Need to use --run=local or --run=hadoop; or to use the :default_run_mode in config.yaml just say --run "
+        maybe_overwrite_output_paths! output_path
+        $stdout.puts `#{command}`
+        raise "Streaming command failed!" unless $?.success?
       end
     end
 
-    def run_mode
-      return 'local'  if options[:local]
-      return 'hadoop' if options[:hadoop]
-      # if only --run is given, assume default run mode
-      options[:run] = options[:default_run_mode] if (options[:run] == true)
-      options[:run].to_s
-    end
-
-    def input_output_paths
-      output_path = options.rest.pop
-      input_paths = options.rest.reject(&:blank?)
-      raise "You need to specify a parsed input directory and a directory for output. Got #{ARGV.inspect}" if (! options[:dry_run]) && (input_paths.blank? || output_path.blank?)
-      [input_paths, output_path]
-    end
-
+    #
+    # In hadoop mode only, removes the destination path before launching
+    #
+    # To the panic-stricken: look in .Trash/current/path/to/accidentally_deleted_files
+    #
     def maybe_overwrite_output_paths! output_path
-      if (options[:overwrite] || options[:rm]) && (run_mode != 'local')
-        $stderr.puts "Removing output file #{output_path}"
-        `hdp-rm -r '#{output_path}'`
+      if (options[:overwrite] || options[:rm]) && (run_mode == 'hadoop')
+        cmd = %Q{#{hadoop_runner} fs -rmr '#{output_path}'}
+        Log.info "Removing output file #{output_path}: #{cmd}"
+        puts `#{cmd}`
       end
     end
 
@@ -216,7 +252,7 @@ module Wukong
     # the map/reducer phase scripts
     def non_wukong_params
       options.
-        reject{|param, val| options.param_definitions[param][:wukong] }.
+        reject{|param, val| options.definition_of(param, :wukong) }.
         map{|param,val| "--#{param}=#{val}" }.
         join(" ")
     end
@@ -228,39 +264,15 @@ module Wukong
 
     # use the full ruby interpreter path to run slave processes
     def ruby_interpreter_path
-      Pathname.new(
-                   File.join(Config::CONFIG["bindir"],
-                             Config::CONFIG["RUBY_INSTALL_NAME"]+Config::CONFIG["EXEEXT"])
-                   ).realpath
+      Pathname.new(File.join(
+          Config::CONFIG["bindir"],
+          Config::CONFIG["RUBY_INSTALL_NAME"]+Config::CONFIG["EXEEXT"])).realpath
     end
 
     #
-    # Execute the runner phase
+    # Usage
     #
-    def exec_hadoop_streaming
-      $stderr.puts "Streaming on self"
-      input_path, output_path = input_output_paths
-      command = runner_command(input_path, output_path)
-      $stderr.puts command
-      unless options[:dry_run]
-        maybe_overwrite_output_paths! output_path
-        $stdout.puts `#{command}`
-      end
-    end
-
-    #
-    # If --map or --reduce, dispatch to the mapper or reducer.
-    # Otherwise,
-    #
-    def run
-      case
-      when options[:map]
-        mapper_klass.new(self.options).stream
-      when options[:reduce]
-        reducer_klass.new(self.options).stream
-      when options[:run]
-        exec_hadoop_streaming
-      else
+    def dump_help
         options.dump_help %Q{Please specify a run mode: you probably want to start with
   #{$0} --run --local input.tsv output.tsv
 although
@@ -268,8 +280,7 @@ although
 or
   cat mapped.tsv | sort | #{$0} --reduce > reduced.tsv
 can be useful for initial testing.}
-      end
     end
-  end
 
+  end
 end

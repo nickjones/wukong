@@ -64,7 +64,7 @@ module Wukong
     # Analagous to Hash#merge
     #
     def merge *args
-      self.dup.merge! *args
+      self.dup.merge!(*args)
     end
     def merge! hsh, &block
       raise "can't handle block arg yet" if block
@@ -103,16 +103,23 @@ module Wukong
       # otherwise they must be uniformly strings
       #
       def from_hash(hsh, has_symbol_keys=false)
-        keys = self.keys
-        keys = keys.map(&:to_sym) if has_symbol_keys
-        self.new *hsh.values_of(*keys)
+        extract_keys = has_symbol_keys ? self.keys.map(&:to_sym) : self.keys.map(&:to_s)
+        self.new(*hsh.values_of(*extract_keys))
       end
       #
       # The last portion of the class in underscored form
-      # note memoization
+      # memoized
       #
-      def self.resource_name
-        @resource_name ||= self.to_s.gsub(%r{.*::}, '').underscore.to_sym
+      def resource_name
+        @resource_name ||= self.class_basename.underscore.to_sym
+      end
+      # The last portion of the class name
+      # memoized
+      #
+      # @example
+      #   This::That::TheOther.new.class_basename   # => TheOther
+      def class_basename
+        @class_basename ||= self.to_s.gsub(%r{.*::}, '')
       end
     end
 

@@ -15,10 +15,6 @@
      #
      class AccumulatingReducer < Wukong::Streamer::Base
        attr_accessor :key
-       def initialize options
-         super options
-         self.key = :__first_pass__
-       end
 
        #
        # override for multiple-field keys, etc.
@@ -57,15 +53,12 @@
        # start! is called on the the first record of the new key
        #
        def start! *args
-         raise %Q{start! is the new reset! -- it has args now, namely the first
-         record of the new key.  It doesn\'t want #super either}
        end
 
        #
        # Override this to accumulate each record for the given key in turn.
        #
        def accumulate *args, &block
-         raise "override the accumulate method in your subclass"
        end
 
        #
@@ -73,18 +66,18 @@
        # You must override this method.
        #
        def finalize
-         raise "override the finalize method in your subclass"
        end
 
-       #
-       # Must make sure to finalize the last-seen accumulation.
-       #
-       def stream
-         super
-         # don't finalize if we never saw any field at all
+       # make a sentinel
+       def before_stream
+         self.key = :__first_pass__
+       end
+
+       # Finalize the last-seen group.
+       def after_stream *args
          finalize(){|record| emit record } unless (self.key == :__first_pass__)
+         super *args
        end
      end
-
    end
 end

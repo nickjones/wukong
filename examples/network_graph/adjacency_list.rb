@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-$: << '/home/flip/ics/wukong/lib' # ENV['WUKONG_PATH']
-require 'wukong'
+require 'rubygems'
+require 'wukong/script'
 
 #
 # Given an adjacency pairs (from \t to) representation of a directed graph:
