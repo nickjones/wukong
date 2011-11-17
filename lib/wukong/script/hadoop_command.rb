@@ -38,6 +38,7 @@ module Wukong
     Settings.define :timeout,                :jobconf => true, :description => 'mapred.task.timeout',                                    :wukong => true
     Settings.define :noempty,                                  :description => "don't create zero-byte reduce files (hadoop mode only)", :wukong => true
     Settings.define :split_on_xml_tag,                         :description => "Parse XML document by specifying the tag name: 'anything found between <tag> and </tag> will be treated as one record for map tasks'", :wukong => true
+    Settings.define :jar_files,              :jobconf => true, :description => "additional files or a directory that should be packaged into the distributed job jar.", :wukong => true
 
     # emit a -jobconf hadoop option if the simplified command line arg is present
     # if not, the resulting nil will be elided later
@@ -119,14 +120,15 @@ module Wukong
       extra_str_args
     end
 
-	def hadoop_file_args
-	  jar_files = ""
-	  jar_files << options[:jar_files].split(',').map{|f| "-file '#{f}'"}.join(' ') if options[:jar_files].is_a? String
-	  if options[:jar_mode]
-	  	jar_files << " -file '#{this_script_filename}'"
-	  end
-	  return jar_files
-	end
+    def hadoop_file_args
+      if options[:jar_files]
+        jar_files = "-file '#{this_script_filename}'    \\\n"
+        jar_files << options[:jar_files].split(',').map{|f| "  -file '#{f}'     \\"}.join("\n")
+        return jar_files
+      else
+        return "-file '#{this_script_filename}'"
+      end
+    end
 
     def hadoop_recycle_env
       %w[RUBYLIB].map do |var|
